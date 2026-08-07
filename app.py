@@ -482,7 +482,7 @@ if __name__ == "__main__" and not start_search:
         for item in auto_matched:
             msg += f"• [{item['機關']}] {item['官階']}\n  觸發關鍵字：{item['關鍵字']}\n  時間：{item['時間']}\n  內容：{item['行程']}\n\n"
     else:
-        msg = f"✅【每日政要行程監控】{date_str}\n經比對，當日無核心政要前往轄區（基隆、雙溪、貢寮、老梅、石門、瑞芳、萬里、金山、汐止）之公開行程，系統運作正常。"
+        msg = f"【每日政要行程監控】{date_str}\n經比對，當日無核心政要前往轄區（基隆、雙溪、貢寮、老梅、石門、瑞芳、萬里、金山、汐止）之公開行程，系統運作正常，手動查詢介面：https://h5rxs9rxdlzmuxffk8f2vg.streamlit.app/。"
 
     # 6. 發送 LINE 通知
     send_line_notification(msg)
