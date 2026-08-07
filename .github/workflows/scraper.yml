@@ -1,0 +1,27 @@
+name: 每日政要行程定時監控
+
+on:
+  schedule:
+    - cron: '0 23 * * *'  # 每日台灣時間 07:00 執行 (UTC 23:00)
+  workflow_dispatch:      # 允許在 GitHub 網站手動點擊測試
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝必要套件
+        run: |
+          pip install -r requirements.txt
+
+      - name: 執行爬蟲並發送 LINE 通知
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python app.py
