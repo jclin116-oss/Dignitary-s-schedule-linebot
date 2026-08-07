@@ -484,11 +484,11 @@ if __name__ == "__main__" and not start_search:
 
     # 5. 組裝訊息（無論有無行程都發送）
     if auto_matched:
-        msg = f"⚠️【政要行程警報】{date_str}\n偵測到當日有政要前往轄區！\n\n"
+        msg = f"⚠️【政要行程監控自動通知】{date_str}\n偵測到當日有政要前往基隆區處轄區！\n\n"
         for item in auto_matched:
             msg += f"• [{item['機關']}] {item['官階']}\n  觸發關鍵字：{item['關鍵字']}\n  時間：{item['時間']}\n  內容：{item['行程']}\n\n"
     else:
-        msg = f"【每日政要行程監控】{date_str}\n經比對，當日無核心政要前往轄區（基隆、雙溪、貢寮、老梅、石門、瑞芳、萬里、金山、汐止）之公開行程，系統運作正常，手動查詢介面：https://h5rxs9rxdlzmuxffk8f2vg.streamlit.app/。"
+        msg = f"【政要行程定時監控自動通知】{date_str}\n經比對，當日無核心政要前往轄區（基隆、雙溪、貢寮、老梅、石門、瑞芳、萬里、金山、汐止）之公開行程，系統運作正常，手動查詢介面：https://h5rxs9rxdlzmuxffk8f2vg.streamlit.app/。"
 
     # 6. 發送 LINE 通知
     send_line_notification(msg)
