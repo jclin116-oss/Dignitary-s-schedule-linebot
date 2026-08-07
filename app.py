@@ -401,6 +401,7 @@ if start_search:
         )
 else:
     st.info("💡 請於左側設定抓取日期後，點擊「開始同步並篩選資料」按鈕。")
+    
 # ==================== 5. 自動化執行與 LINE 通知 (GitHub Actions 用) ====================
 def send_line_notification(message):
     import os
@@ -431,8 +432,13 @@ def send_line_notification(message):
 
 # 判定是否在 GitHub Actions 環境執行（非點擊 Streamlit 按鈕時觸發）
 if __name__ == "__main__" and not start_search:
-    today_obj = datetime.today()
+    from datetime import timezone, timedelta
+    
+    # 強制修正為台灣時區 (UTC+8)
+    tz_taiwan = timezone(timedelta(hours=8))
+    today_obj = datetime.now(tz_taiwan)
     date_str = today_obj.strftime("%Y-%m-%d")
+    
     print(f"=== 開始執行每日政要行程自動監控 ({date_str}) ===")
     
     auto_consolidated_data = []
