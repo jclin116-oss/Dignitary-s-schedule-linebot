@@ -401,3 +401,88 @@ if start_search:
         )
 else:
     st.info("💡 請於左側設定抓取日期後，點擊「開始同步並篩選資料」按鈕。")
+# ==================== 5. 自動化執行與 LINE 通知 (GitHub Actions 用) ====================
+def send_line_notification(message):
+    import os
+    token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+    user_id = os.getenv("LINE_USER_ID")
+    
+    if not token or not user_id:
+        print("未設定 LINE_CHANNEL_ACCESS_TOKEN 或 LINE_USER_ID，跳過發送。")
+        return
+
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    payload = {
+        "to": user_id,
+        "messages": [{"type": "text", "text": message}]
+    }
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        if res.status_code == 200:
+            print("LINE 通知發送成功！")
+        else:
+            print(f"LINE 發送失敗，狀態碼：{res.status_code}, 回應：{res.text}")
+    except Exception as e:
+        print(f"LINE 發送異常: {e}")
+
+# 判定是否在 GitHub Actions 環境執行（非點擊 Streamlit 按鈕時觸發）
+if __name__ == "__main__" and not start_search:
+    today_obj = datetime.today()
+    date_str = today_obj.strftime("%Y-%m-%d")
+    print(f"=== 開始執行每日政要行程自動監控 ({date_str}) ===")
+    
+    auto_consolidated_data = []
+    
+    # 1. 總統府
+    try:
+        auto_consolidated_data.extend(parse_president_schedule(today_obj))
+    except Exception as e:
+        print(f"總統府抓取失敗: {e}")
+        
+    # 2. 行政院
+    try:
+        ey_urls = {
+            "院長": "https://www.ey.gov.tw/Page/278197D37F0FCDA",
+            "副院長": "https://www.ey.gov.tw/Page/EE0A18CCA0C9BC4",
+            "秘書長": "https://www.ey.gov.tw/Page/98C9B1D4B4F70B85"
+        }
+        for title, url in ey_urls.items():
+            auto_consolidated_data.extend(get_ey_data(url, title, date_str))
+    except Exception as e:
+        print(f"行政院抓取失敗: {e}")
+        
+    # 3. 經濟部
+    try:
+        moea_url = "https://www.moea.gov.tw/Mns/populace/news/MinisterSchedule.aspx?menu_id=42225"
+        auto_consolidated_data.extend(get_moea_schedule(moea_url, date_str))
+    except Exception as e:
+        print(f"經濟部抓取失敗: {e}")
+
+    # 4. 比對轄區關鍵字
+    auto_matched = []
+    for row in auto_consolidated_data:
+        content = str(row.get("行程內容", ""))
+        found_keywords = [kw for kw in JURISDICTION_KEYWORDS if kw in content]
+        if found_keywords:
+            auto_matched.append({
+                "機關": row["機關"],
+                "官階": row["類別/官階"],
+                "行程": row["行程內容"],
+                "時間": row["時間"],
+                "關鍵字": "、".join(found_keywords)
+            })
+
+    # 5. 組裝訊息（無論有無行程都發送）
+    if auto_matched:
+        msg = f"⚠️【政要行程警報】{date_str}\n偵測到當日有政要前往轄區！\n\n"
+        for item in auto_matched:
+            msg += f"• [{item['機關']}] {item['官階']}\n  觸發關鍵字：{item['關鍵字']}\n  時間：{item['時間']}\n  內容：{item['行程']}\n\n"
+    else:
+        msg = f"✅【每日政要行程監控】{date_str}\n經比對，當日無核心政要前往轄區（基隆、雙溪、貢寮、老梅、石門、瑞芳、萬里、金山、汐止）之公開行程，系統運作正常。"
+
+    # 6. 發送 LINE 通知
+    send_line_notification(msg)
