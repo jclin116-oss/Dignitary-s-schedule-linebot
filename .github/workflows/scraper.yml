@@ -2,7 +2,7 @@ name: 每日政要行程定時監控
 
 on:
   schedule:
-    - cron: '30 23 * * *'  # 每日台灣時間 07:30 執行 (UTC 23:30)
+    - cron: '32 23 * * *'  # 每日台灣時間 07:30 執行 (UTC 23:30)
   workflow_dispatch:      # 允許在 GitHub 網站手動點擊測試
 
 jobs:
