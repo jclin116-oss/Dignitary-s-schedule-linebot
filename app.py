@@ -21,7 +21,7 @@ target_date = st.sidebar.date_input("選擇日期", datetime.today())
 start_search = st.sidebar.button("開始同步並篩選資料", type="primary")
 
 # 定義轄區關鍵字
-JURISDICTION_KEYWORDS = ["基隆", "雙溪", "貢寮", "老梅", "石門", "瑞芳", "萬里", "金山", "汐止"]
+JURISDICTION_KEYWORDS = ["基隆", "雙溪", "貢寮", "老梅", "石門", "瑞芳", "萬里", "金山", "汐止", "平溪", "三芝", "石碇", "慈護宮", "拱北殿", "靈鷲山", "勸濟堂", "慶安宮"]
 
 # ==================== 1. 總統府解析邏輯 ====================
 def parse_president_schedule(scraped_date):
