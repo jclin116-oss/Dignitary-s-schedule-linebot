@@ -1,10 +1,10 @@
 import os
 import re
+import json
 from datetime import datetime, timezone, timedelta
 import urllib3
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
 
 # 關閉 SSL 憑證警告資訊
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -290,29 +290,9 @@ def run_all_scrapers(target_date_obj):
     
     return consolidated_data
 
-# ==================== 3. LINE 通知與自動化進入點 ====================
-def send_line_notification(message):
-    token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-    user_id = os.getenv("LINE_USER_ID")
-    if not token or not user_id:
-        print("[Skipped] 未設定 LINE 環境變數。")
-        return
-
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    payload = {"to": user_id, "messages": [{"type": "text", "text": message}]}
-    
-    try:
-        res = requests.post(url, json=payload, headers=headers, timeout=10)
-        if res.status_code == 200:
-            print("LINE 通知發送成功！")
-        else:
-            print(f"LINE 發送失敗 ({res.status_code}): {res.text}")
-    except Exception as e:
-        print(f"LINE 發送異常: {e}")
-
+# ==================== 3. 自動化進入點（寫入 JSON 檔案） ====================
 def run_cli_cron():
-    """專為 GitHub Actions 或排程呼叫的執行函式"""
+    """專為 GitHub Actions 或排程呼叫的執行函式：抓取資料並輸出 JSON"""
     tz_taiwan = timezone(timedelta(hours=8))
     today_obj = datetime.now(tz_taiwan)
     date_str = today_obj.strftime("%Y-%m-%d")
@@ -333,14 +313,17 @@ def run_cli_cron():
                 "關鍵字": "、".join(found_keywords)
             })
 
-    if auto_matched:
-        msg = f"⚠️【政要公開行程監控日報】{date_str}\n偵測到當日有政要前往基隆區處轄區！\n\n"
-        for item in auto_matched:
-            msg += f"• [{item['機關']}] {item['官階']}\n  觸發關鍵字：{item['關鍵字']}\n  時間：{item['時間']}\n  內容：{item['行程']}\n\n"
-    else:
-        msg = f"【政要公開行程監控日報】{date_str}\n經自動化比對，當日無核心政要前往基隆區處轄區公開行程，系統運作正常。"
+    # 將比對結果存成 JSON 檔案，供 REPO B 下載
+    output_data = {
+        "date": date_str,
+        "has_matched": len(auto_matched) > 0,
+        "matched_items": auto_matched
+    }
+    
+    with open("matched_results.json", "w", encoding="utf-8") as f:
+        json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    send_line_notification(msg)
+    print(f"已成功產出 matched_results.json（共 {len(auto_matched)} 筆符合行程）")
 
 if __name__ == "__main__":
     run_cli_cron()
