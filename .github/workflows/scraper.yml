@@ -2,7 +2,7 @@ name: 每日政要行程定時監控
 
 on:
   schedule:
-    - cron: '57 22 * * *'  # 每日台灣時間 06:57 執行 (UTC 22:57)
+    - cron: '57 22 * * *' # 每日台灣時間 06:57 執行 (UTC 22:57)
   workflow_dispatch:      # 允許在 GitHub 網站手動點擊測試
 
 jobs:
@@ -20,8 +20,15 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: 執行爬蟲並發送 LINE 通知
+      - name: 執行爬蟲並產生比對結果
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python app.py
+
+      - name: 上傳比對結果檔案
+        uses: actions/upload-artifact@v4
+        with:
+          name: matched-results-artifact
+          path: matched_results.json
+          retention-days: 1
