@@ -29,7 +29,7 @@ HTTP_HEADERS = {
 
 # ==================== 0. Gemini API 輔助判讀 ====================
 def check_by_gemini_api(text):
-    """當關鍵字未命中時，呼叫 Gemini API 進行語意判讀"""
+    """無符合關鍵字時，呼叫Gemini API輔助判讀"""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key or not text or text == "無公開行程":
         return False, ""
