@@ -300,30 +300,37 @@ def run_cli_cron():
     print(f"=== 開始執行每日政要行程自動監控 ({date_str}) ===")
     data = run_all_scrapers(today_obj)
     
-    auto_matched = []
+    all_items = []
+    has_matched = False
+
     for row in data:
         content = str(row.get("行程內容", ""))
         found_keywords = [kw for kw in JURISDICTION_KEYWORDS if kw in content]
-        if found_keywords:
-            auto_matched.append({
-                "機關": row["機關"],
-                "官階": row["類別/官階"],
-                "行程": row["行程內容"],
-                "時間": row["時間"],
-                "關鍵字": "、".join(found_keywords)
-            })
+        
+        is_jurisdiction = len(found_keywords) > 0
+        if is_jurisdiction:
+            has_matched = True
 
-    # 將比對結果存成 JSON 檔案，供 REPO B 下載
+        all_items.append({
+            "機關": row["機關"],
+            "官階": row["類別/官階"],
+            "行程": row["行程內容"],
+            "時間": row["時間"],
+            "關鍵字": "、".join(found_keywords) if is_jurisdiction else "",
+            "is_jurisdiction": is_jurisdiction
+        })
+
+    # 將完整的比對與完整行程結果存成 JSON 檔案，供 REPO B 下載並推播
     output_data = {
         "date": date_str,
-        "has_matched": len(auto_matched) > 0,
-        "matched_items": auto_matched
+        "has_matched": has_matched,
+        "all_items": all_items
     }
     
     with open("matched_results.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    print(f"已成功產出 matched_results.json（共 {len(auto_matched)} 筆符合行程）")
+    print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{has_matched}）")
 
 if __name__ == "__main__":
     run_cli_cron()
