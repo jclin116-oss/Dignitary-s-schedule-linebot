@@ -11,14 +11,65 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 全域設定
 JURISDICTION_KEYWORDS = [
-    "基隆", "雙溪", "貢寮", "老梅", "石門", "瑞芳", "萬里", 
-    "金山", "汐止", "平溪", "三芝", "石碇", "慈護宮", "拱北殿", 
-    "靈鷲山", "勸濟堂", "慶安宮"
+    # 行政區
+    "基隆", "汐止", "瑞芳", "萬里", "金山", "石門", "貢寮", "雙溪", "平溪", "三芝", "石碇", "七堵", "暖暖", "八堵",
+    # 轄區地標與重要宮廟
+    "拱北殿", "金山慈護宮", "法鼓山", "無生道場", "靈鷲山", "勸濟堂", "老梅", "野柳", "三貂角", "九份", "金瓜石", "鼻頭角", "龙洞", "和平島", "外木山", 
+    "潮境公園", "八斗子", "正濱漁港", "情人湖", "十分老街", "菁桐", "不厭亭", "象鼻岩", "聖南寺", "東北角", "北海岸",
+    # 學校與教育機構
+    "國立臺灣海洋大學", "經國管理學院", "崇右影藝科技大學", "基隆高中", "基隆女中", "基隆商工", "基隆家商", "暖暖高中", "基隆中山高中", "汐止國中", "秀峰高中", "瑞芳高工", "金山高中", "雙溪高中",
+    "八斗高中", "安樂高中", "信義國小", "仁愛國小", "堵南國小",
+    # 關鍵單位名稱
+    "基隆區處", "基隆區營業處", "協和電廠", "深澳電廠", "核一廠", "核二廠", "核四廠", "汐止一次變電所", "基隆一次變電所", "基隆港", "西岸碼頭", "東岸碼頭", "基隆車站", "汐止車站", "七堵機務段", "基隆長庚", "汐止國泰"
 ]
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+# ==================== 0. Gemini API 輔助判讀 ====================
+def check_by_gemini_api(text):
+    """當關鍵字未命中時，呼叫 Gemini API 進行語意判讀"""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or not text or text == "無公開行程":
+        return False, ""
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    
+    prompt = f"""
+你是一個政要行程地理位置分析專家。請判斷以下行程地點是否屬於「台電基隆區營業處轄區」。
+
+【轄區範圍】：
+1. 基隆市全區（中正、七堵、暖暖、仁愛、中山、安樂、信義）。
+2. 新北市轄區：汐止、瑞芳、萬里、金山、石門、貢寮、雙溪、平溪、三芝、石碇。
+3. 包含泛指「東北角」、「北海岸」且涵蓋上述區域的行程。
+
+行程內容："{text}"
+
+請嚴格僅回傳 JSON 格式，不要加任何 Markdown 標記，格式範例：
+{{"is_jurisdiction": true, "reason": "屬於貢寮區"}} 或是 {{"is_jurisdiction": false, "reason": ""}}
+"""
+
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "response_mime_type": "application/json"
+        }
+    }
+    
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=8)
+        if res.status_code == 200:
+            res_json = res.json()
+            raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
+            data = json.loads(raw_text)
+            return data.get("is_jurisdiction", False), data.get("reason", "")
+    except Exception as e:
+        print(f"[Warning] Gemini API 呼叫異常: {e}")
+        
+    return False, ""
 
 # ==================== 1. 網路請求封裝 ====================
 def fetch_html(url, timeout=15):
@@ -305,9 +356,23 @@ def run_cli_cron():
 
     for row in data:
         content = str(row.get("行程內容", ""))
+        
+        # 1. 第一階段：關鍵字比對
         found_keywords = [kw for kw in JURISDICTION_KEYWORDS if kw in content]
         
-        is_jurisdiction = len(found_keywords) > 0
+        keyword_str = ""
+        is_jurisdiction = False
+        
+        if len(found_keywords) > 0:
+            is_jurisdiction = True
+            keyword_str = "、".join(found_keywords)
+        else:
+            # 2. 第二階段：關鍵字未命中，交由 Gemini API 判讀
+            is_ai_matched, ai_reason = check_by_gemini_api(content)
+            if is_ai_matched:
+                is_jurisdiction = True
+                keyword_str = f"AI判讀({ai_reason})"
+        
         if is_jurisdiction:
             has_matched = True
 
@@ -316,7 +381,7 @@ def run_cli_cron():
             "官階": row["類別/官階"],
             "行程": row["行程內容"],
             "時間": row["時間"],
-            "關鍵字": "、".join(found_keywords) if is_jurisdiction else "",
+            "關鍵字": keyword_str,
             "is_jurisdiction": is_jurisdiction
         })
 
