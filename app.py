@@ -29,7 +29,7 @@ HTTP_HEADERS = {
 
 # ==================== 0. Gemini API 輔助判讀 ====================
 def check_by_gemini_api(text):
-    """無符合關鍵字時，呼叫Gemini API輔助判讀"""
+    """二次篩選，未符合關鍵字者呼叫Gemini API輔助判讀"""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key or not text or text == "無公開行程":
         return False, ""
@@ -37,7 +37,7 @@ def check_by_gemini_api(text):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
-你是一個政要行程地理位置分析專家。請判斷以下行程地點是否屬於「台電基隆區營業處轄區」。
+你是一個地理位置專家，請判斷以下行程地點是否屬於「台電基隆區營業處轄區」。
 
 【轄區範圍】：
 1. 基隆市全區（中正、七堵、暖暖、仁愛、中山、安樂、信義）。
