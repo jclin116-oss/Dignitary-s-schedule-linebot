@@ -22,6 +22,7 @@ jobs:
 
       - name: 執行爬蟲並產生比對結果
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python app.py
