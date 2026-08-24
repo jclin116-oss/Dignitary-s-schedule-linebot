@@ -34,7 +34,7 @@ def check_by_gemini_api(text):
     if not api_key or not text or text == "無公開行程":
         return False, ""
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
     
     prompt = f"""
 你是一個地理位置專家，請判斷以下行程地點是否屬於「台電基隆區營業處轄區」。
