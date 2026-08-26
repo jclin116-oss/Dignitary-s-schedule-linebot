@@ -24,7 +24,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          LINE_TARGET_GROUP_ID: ${{ secrets.LINE_TARGET_GROUP_ID }}  
         run: python app.py
 
       - name: 上傳比對結果檔案
