@@ -34,7 +34,7 @@ def check_by_gemini_api(text):
     if not api_key or not text or text == "無公開行程":
         return False, ""
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
 你是一個地理位置專家，請判讀以下行程地點是否屬於「台電基隆區營業處轄區」。
@@ -60,7 +60,7 @@ def check_by_gemini_api(text):
     }
     
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=12)
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
         if res.status_code == 200:
             res_json = res.json()
             raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
@@ -342,8 +342,8 @@ def run_all_scrapers(target_date_obj):
     return consolidated_data
 
 # ==================== 3. LINE API 發送邏輯 ====================
-def push_line_notification(date_str, matched_items):
-    """透過 LINE Messaging API 發送推播至指定的 Line 群組"""
+def push_line_notification(date_str, all_items):
+    """透過 LINE Messaging API 發送推播至指定的 Line 群組（推送所有抓到的行程）"""
     channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     target_group_id = os.environ.get("LINE_TARGET_GROUP_ID")
 
@@ -356,17 +356,18 @@ def push_line_notification(date_str, matched_items):
         "Authorization": f"Bearer {channel_access_token}"
     }
 
-    if matched_items:
-        msg_lines = [f"📢【轄區政要行程通知】({date_str})\n偵測到以下轄區內相關行程：\n"]
-        for idx, item in enumerate(matched_items, 1):
+    if all_items:
+        msg_lines = [f"📢【每日政要行程通知】({date_str})\n本日最新公開行程如下：\n"]
+        for idx, item in enumerate(all_items, 1):
+            kw_info = item['關鍵字'] if item['關鍵字'] else "無"
             msg_lines.append(
                 f"{idx}. [{item['機關']}-{item['官階']}]\n"
                 f"   時間：{item['時間']}\n"
                 f"   行程：{item['行程']}\n"
-                f"   命中條件：{item['關鍵字']}\n"
+                f"   命中條件：{kw_info}\n"
             )
     else:
-        msg_lines = [f"ℹ️【轄區政要行程通知】({date_str})\n今日無轄區相關公開行程。"]
+        msg_lines = [f"ℹ️【每日政要行程通知】({date_str})\n今日無公開行程。"]
 
     message_text = "\n".join(msg_lines).strip()
 
@@ -447,8 +448,8 @@ def run_cli_cron():
 
     print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{len(matched_items)} 筆）")
 
-    # 直接呼叫 LINE API 推播給群組
-    push_line_notification(date_str, matched_items)
+    # 將所有行程推播給 LINE 群組
+    push_line_notification(date_str, all_items)
 
 if __name__ == "__main__":
     run_cli_cron()
