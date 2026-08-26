@@ -340,10 +340,11 @@ def run_all_scrapers(target_date_obj):
     consolidated_data.extend(get_moea_schedule(moea_url, date_str))
     
     return consolidated_data
-
+    
 # ==================== 3. LINE API 發送邏輯 ====================
+
 def push_line_notification(date_str, all_items):
-    """透過 LINE Messaging API 發送推播至指定的 Line 群組（推送所有抓到的行程）"""
+    """透過 LINE Messaging API 發送推播至指定的 Line 群組"""
     channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     target_group_id = os.environ.get("LINE_TARGET_GROUP_ID")
 
@@ -356,18 +357,30 @@ def push_line_notification(date_str, all_items):
         "Authorization": f"Bearer {channel_access_token}"
     }
 
-    if all_items:
-        msg_lines = [f"📢【每日政要行程通知】({date_str})\n本日最新公開行程如下：\n"]
-        for idx, item in enumerate(all_items, 1):
-            kw_info = item['關鍵字'] if item['關鍵字'] else "無"
-            msg_lines.append(
-                f"{idx}. [{item['機關']}-{item['官階']}]\n"
-                f"   時間：{item['時間']}\n"
-                f"   行程：{item['行程']}\n"
-                f"   命中條件：{kw_info}\n"
-            )
-    else:
-        msg_lines = [f"ℹ️【每日政要行程通知】({date_str})\n今日無公開行程。"]
+    # 判斷是否有任何一筆行程命中轄區
+    has_jurisdiction = any(item.get("is_jurisdiction", False) for item in all_items)
+    status_header = "✅ 有本處轄區" if has_jurisdiction else "❌ 無本處轄區"
+
+    msg_lines = [
+        "系統定時自動化通知",
+        "",
+        f"【{date_str}政要公開行程動態】",
+        status_header
+    ]
+
+    for item in all_items:
+        time_info = item['時間']
+        content_info = item['行程']
+        is_j = item.get("is_jurisdiction", False)
+        kw_info = item.get("關鍵字", "")
+
+        # 若命中轄區，在該行末尾標註關鍵字或判讀結果
+        tag = f" 📌 [轄區行程: {kw_info}]" if is_j else ""
+
+        if content_info == "無公開行程" or time_info == "-":
+            msg_lines.append(f"• [{item['機關']}-{item['官階']}] - 無公開行程{tag}")
+        else:
+            msg_lines.append(f"• [{item['機關']}-{item['官階']}] {time_info} {content_info}{tag}")
 
     message_text = "\n".join(msg_lines).strip()
 
