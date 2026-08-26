@@ -60,7 +60,7 @@ def check_by_gemini_api(text):
     }
     
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=8)
+        res = requests.post(url, headers=headers, json=payload, timeout=12)
         if res.status_code == 200:
             res_json = res.json()
             raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
