@@ -37,7 +37,7 @@ def check_by_gemini_api(text):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
     
     prompt = f"""
-你是一個地理位置專家，請判斷以下行程地點是否屬於「台電基隆區營業處轄區」。
+你是一個地理位置專家，請判讀以下行程地點是否屬於「台電基隆區營業處轄區」。
 
 【轄區範圍】：
 1. 基隆市全區（中正、七堵、暖暖、仁愛、中山、安樂、信義）。
@@ -341,9 +341,58 @@ def run_all_scrapers(target_date_obj):
     
     return consolidated_data
 
-# ==================== 3. 自動化進入點（寫入 JSON 檔案） ====================
+# ==================== 3. LINE API 發送邏輯 ====================
+def push_line_notification(date_str, matched_items):
+    """透過 LINE Messaging API 發送推播至指定的 Line 群組"""
+    channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+    target_group_id = os.environ.get("LINE_TARGET_GROUP_ID")
+
+    if not channel_access_token or not target_group_id:
+        print("[Warning] 未設定 LINE_CHANNEL_ACCESS_TOKEN 或 LINE_TARGET_GROUP_ID，跳過推播。")
+        return
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {channel_access_token}"
+    }
+
+    if matched_items:
+        msg_lines = [f"📢【轄區政要行程通知】({date_str})\n偵測到以下轄區內相關行程：\n"]
+        for idx, item in enumerate(matched_items, 1):
+            msg_lines.append(
+                f"{idx}. [{item['機關']}-{item['官階']}]\n"
+                f"   時間：{item['時間']}\n"
+                f"   行程：{item['行程']}\n"
+                f"   命中條件：{item['關鍵字']}\n"
+            )
+    else:
+        msg_lines = [f"ℹ️【轄區政要行程通知】({date_str})\n今日無轄區相關公開行程。"]
+
+    message_text = "\n".join(msg_lines).strip()
+
+    payload = {
+        "to": target_group_id,
+        "messages": [
+            {
+                "type": "text",
+                "text": message_text
+            }
+        ]
+    }
+
+    url = "https://api.line.me/v2/bot/message/push"
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("LINE 推播發送成功！")
+        else:
+            print(f"[Error] LINE 推播失敗 ({res.status_code}): {res.text}")
+    except Exception as e:
+        print(f"[Error] LINE 推播發送異常: {e}")
+
+# ==================== 4. 自動化進入點 ====================
 def run_cli_cron():
-    """專為 GitHub Actions 或排程呼叫的執行函式：抓取資料並輸出 JSON"""
+    """執行抓取、比對並直接推播至 LINE 群組"""
     tz_taiwan = timezone(timedelta(hours=8))
     today_obj = datetime.now(tz_taiwan)
     date_str = today_obj.strftime("%Y-%m-%d")
@@ -352,7 +401,7 @@ def run_cli_cron():
     data = run_all_scrapers(today_obj)
     
     all_items = []
-    has_matched = False
+    matched_items = []
 
     for row in data:
         content = str(row.get("行程內容", ""))
@@ -373,29 +422,33 @@ def run_cli_cron():
                 is_jurisdiction = True
                 keyword_str = f"AI判讀({ai_reason})"
         
-        if is_jurisdiction:
-            has_matched = True
-
-        all_items.append({
+        item_obj = {
             "機關": row["機關"],
             "官階": row["類別/官階"],
             "行程": row["行程內容"],
             "時間": row["時間"],
             "關鍵字": keyword_str,
             "is_jurisdiction": is_jurisdiction
-        })
+        }
 
-    # 將完整的比對與完整行程結果存成 JSON 檔案，供 REPO B 下載並推播
+        all_items.append(item_obj)
+        if is_jurisdiction:
+            matched_items.append(item_obj)
+
+    # 寫入 JSON 檔案備份
     output_data = {
         "date": date_str,
-        "has_matched": has_matched,
+        "has_matched": len(matched_items) > 0,
         "all_items": all_items
     }
     
     with open("matched_results.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{has_matched}）")
+    print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{len(matched_items)} 筆）")
+
+    # 直接呼叫 LINE API 推播給群組
+    push_line_notification(date_str, matched_items)
 
 if __name__ == "__main__":
     run_cli_cron()
