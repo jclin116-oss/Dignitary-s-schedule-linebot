@@ -2,7 +2,7 @@ name: 每日政要行程定時監控
 
 on:
   schedule:
-    - cron: '15 22 * * *' 
+    - cron: '11 22 * * *' 
   workflow_dispatch:      # 允許在 GitHub 網站手動點擊測試
 
 jobs:
