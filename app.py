@@ -362,8 +362,6 @@ def push_line_notification(date_str, all_items):
     status_header = "✅ 有本處轄區" if has_jurisdiction else "❌ 無本處轄區"
 
     msg_lines = [
-        "系統定時自動化通知",
-        "",
         f"【{date_str}政要公開行程動態】",
         status_header
     ]
