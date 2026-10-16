@@ -205,13 +205,22 @@ def get_ey_data(url, title, target_date_str):
     
     if soup:
         outer_blocks = soup.find_all(class_="timeline_block")
+        current_date_str = None  # 用來記錄上一筆的日期，處理同一天多個行程時日期標籤被省略的情況
+        
         for block in outer_blocks:
             date_tag = block.find(class_=["timeline-date", "newsDate"])
-            if not date_tag:
+            if date_tag:
+                raw_date_text = date_tag.get_text(separator=' ', strip=True)
+                parsed_date = parse_taiwan_date(raw_date_text)
+                if parsed_date:
+                    current_date_str = parsed_date
+            
+            # 如果既沒有新的 date_tag，前面也沒有記錄過日期，則跳過
+            if not current_date_str:
                 continue
                 
-            raw_date_text = date_tag.get_text(separator=' ', strip=True)
-            if parse_taiwan_date(raw_date_text) != target_date_str:
+            # 比對是否為目標日期
+            if current_date_str != target_date_str:
                 continue
                 
             content_tag = block.find(class_="timeline-content")
