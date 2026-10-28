@@ -253,7 +253,7 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """使用 Playwright 模擬瀏覽器，修改等待條件並加上除錯記錄"""
+    """使用 Playwright 模擬瀏覽器，並印出網頁前 300 字進行內容診斷"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
@@ -268,16 +268,18 @@ def get_moea_schedule(url, target_date_str):
             page = browser.new_page(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
-            # 改用 domcontentloaded 避免被背景連線卡住逾時
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(4000)  # 額外等待 4 秒讓 JS 渲染完成
+            page.wait_for_timeout(4000)  # 等待 JS 渲染
             
             html_content = page.content()
             browser.close()
 
             soup = BeautifulSoup(html_content, "html.parser")
             raw_text = soup.get_text("\n", strip=True)
+            
+            # 把它印出來讓你在 GitHub Actions 看到底抓到什麼
             print(f"[Debug] 經濟部網頁文字總長度: {len(raw_text)}")
+            print(f"[Debug] 網頁內容預覽（前300字）:\n{raw_text[:300]}")
 
             lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
