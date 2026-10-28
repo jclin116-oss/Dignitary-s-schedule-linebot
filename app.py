@@ -5,7 +5,6 @@ from datetime import datetime, timezone, timedelta
 import urllib3
 import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 
 # 關閉 SSL 憑證警告資訊
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -253,33 +252,37 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """使用 Playwright 模擬瀏覽器，並印出網頁前 300 字進行內容診斷"""
+    """透過 ZenRows API 繞過 Cloudflare 取得經濟部行程"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
     m_month = target_date_obj.month
     m_day = target_date_obj.day
     today_date_pattern = f"{m_month}月{m_day}日"
-    print(f"[Info] 正在抓取經濟部行程，目標日期關鍵字：{today_date_pattern}")
+
+    zenrows_api_key = os.environ.get("ZENROWS_API_KEY")
+    if not zenrows_api_key:
+        print("[Error] 未設定 ZENROWS_API_KEY")
+        return [
+            {"機關": "經濟部", "類別/官階": "部長", "行程內容": "無公開行程", "時間": "-"},
+            {"機關": "經濟部", "類別/官階": "次長", "行程內容": "無公開行程", "時間": "-"}
+        ]
+
+    zenrows_url = "https://api.zenrows.com/v1/"
+    params = {
+        "apikey": zenrows_api_key,
+        "url": url,
+        "js_render": "true",
+        "premium_proxy": "true", # 使用住宅代理繞過進階反爬
+        "wait": "3000"           # 等待 JS 載入
+    }
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(4000)  # 等待 JS 渲染
-            
-            html_content = page.content()
-            browser.close()
-
-            soup = BeautifulSoup(html_content, "html.parser")
+        res = requests.get(zenrows_url, params=params, timeout=30)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
             raw_text = soup.get_text("\n", strip=True)
-            
-            # 把它印出來讓你在 GitHub Actions 看到底抓到什麼
-            print(f"[Debug] 經濟部網頁文字總長度: {len(raw_text)}")
-            print(f"[Debug] 網頁內容預覽（前300字）:\n{raw_text[:300]}")
+            print(f"[Debug] ZenRows 取得經濟部網頁文字總長度: {len(raw_text)}")
 
             lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
@@ -317,9 +320,10 @@ def get_moea_schedule(url, target_date_str):
                                     "時間": time_str,
                                     "行程內容": full_content
                                 })
-
+        else:
+            print(f"[Error] ZenRows API 回傳狀態碼: {res.status_code}, 內容: {res.text}")
     except Exception as e:
-        print(f"[Error] Playwright 執行失敗: {e}")
+        print(f"[Error] ZenRows 請求失敗: {e}")
 
     final_rows = []
     for cat in ["部長", "次長"]:
@@ -472,7 +476,7 @@ def run_cli_cron():
     with open("matched_results.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{len(matched_items)} 筆）")
+    print(f"... matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{len(matched_items)} 筆）")
 
     push_line_notification(date_str, all_items)
 
