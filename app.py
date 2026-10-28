@@ -252,7 +252,7 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """透過 ZenRows API 繞過 Cloudflare 取得經濟部行程"""
+    """透過 ZenRows API 繞過 Cloudflare 取得經濟部行程（已將逾時時間延長至 60 秒）"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
@@ -273,12 +273,13 @@ def get_moea_schedule(url, target_date_str):
         "apikey": zenrows_api_key,
         "url": url,
         "js_render": "true",
-        "premium_proxy": "true", # 使用住宅代理繞過進階反爬
-        "wait": "3000"           # 等待 JS 載入
+        "premium_proxy": "true",
+        "wait": "3000"
     }
 
     try:
-        res = requests.get(zenrows_url, params=params, timeout=30)
+        # 將 timeout 從 30 提高至 60 秒，避免等待瀏覽器渲染時逾時
+        res = requests.get(zenrows_url, params=params, timeout=60)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             raw_text = soup.get_text("\n", strip=True)
