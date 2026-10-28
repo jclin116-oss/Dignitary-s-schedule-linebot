@@ -253,13 +253,14 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """使用 Playwright 模擬瀏覽器，並精準比對今日日期區塊抓取經濟部行程"""
+    """使用 Playwright 模擬瀏覽器，修改等待條件並加上除錯記錄"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
     m_month = target_date_obj.month
     m_day = target_date_obj.day
     today_date_pattern = f"{m_month}月{m_day}日"
+    print(f"[Info] 正在抓取經濟部行程，目標日期關鍵字：{today_date_pattern}")
 
     try:
         with sync_playwright() as p:
@@ -267,30 +268,30 @@ def get_moea_schedule(url, target_date_str):
             page = browser.new_page(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(3000)  # 等待 JS 載入
+            # 改用 domcontentloaded 避免被背景連線卡住逾時
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(4000)  # 額外等待 4 秒讓 JS 渲染完成
             
             html_content = page.content()
             browser.close()
 
             soup = BeautifulSoup(html_content, "html.parser")
             raw_text = soup.get_text("\n", strip=True)
+            print(f"[Debug] 經濟部網頁文字總長度: {len(raw_text)}")
+
             lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
             in_today_block = False
             current_role = None
 
             for i, line in enumerate(lines):
-                # 判斷是否進入「今天」的日期區塊
                 if today_date_pattern in line:
                     in_today_block = True
                     continue
                 
-                # 若已進入今天區塊，但遇到「非今天」的日期標籤，表示今天區塊已結束，立即中斷
                 if in_today_block and re.search(r'\d{1,2}月\d{1,2}日', line) and today_date_pattern not in line:
                     break
 
-                # 僅在今天區塊內提取行程
                 if in_today_block:
                     if line in ["部長", "次長"]:
                         current_role = line
