@@ -252,62 +252,37 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """專門適配經濟部新版 HTML 結構的行程抓取邏輯"""
+    """直接呼叫經濟部後端 API / AJAX 端點抓取行程"""
     categories_status = {"部長": [], "次長": []}
-    target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
-    soup = fetch_html(url)
-
-    if soup:
-        # 抓取頁面上所有的容器元素
-        elements = soup.find_all(['div', 'li', 'section'])
-        current_block_date = None
-
-        for el in elements:
-            text = el.get_text(" ", strip=True)
-            
-            # 1. 檢查是否包含日期標籤（如 "10月28日 2026" 或 "10月28日"）
-            date_match = re.search(r'(\d{1,2})\s*月\s*(\d{1,2})\s*日', text)
-            if date_match:
-                m, d = int(date_match.group(1)), int(date_match.group(2))
-                # 檢查年份（若有）
-                year_match = re.search(r'20\d{2}', text)
-                y = int(year_match.group(0)) if year_match else target_date_obj.year
-                
-                if f"{y}-{m:02d}-{d:02d}" == target_date_str:
-                    current_block_date = target_date_str
-                else:
-                    # 如果遇到其他日期，標記非目標日
-                    if len(text) < 30: # 確保這是日期標題而非內文提到的日期
-                        current_block_date = None
-
-            # 2. 如果目前處於目標日期的區塊內，開始抓取行程
-            if current_block_date == target_date_str:
-                role = None
-                if "部長" in text and "次長" not in text:
-                    role = "部長"
-                elif "次長" in text:
-                    role = "次長"
-
-                if role:
-                    # 匹配時間格式 (例如 "9:00 AM" 或 "09:00" 或 "上午9:00")
-                    time_match = re.search(r'(\d{1,2}[:：]\d{2}\s*(?:[APMpm]{2})?|[上下]午\s*\d{1,2}[:：]\d{2})', text)
-                    time_str = time_match.group(1).strip() if time_match else "-"
-
-                    # 清理內容文字
-                    content_str = text
-                    if time_match:
-                        content_str = content_str.replace(time_match.group(0), "")
-                    content_str = re.sub(r'^(部長|次長)', '', content_str).strip()
-
-                    # 避免重複寫入與空內容
-                    if content_str and "本日無公開行程" not in content_str:
-                        # 檢查是否已存在相同的行程
-                        if not any(item['行程內容'] == content_str for item in categories_status[role]):
-                            categories_status[role].append({
-                                "時間": time_str,
-                                "行程內容": content_str
-                            })
+    api_url = "https://www.moea.gov.tw/Mns/populace/news/MinisterScheduleHandler.ashx"
+    params = {
+        "sdate": target_date_str,
+        "edate": target_date_str
+    }
+    
+    try:
+        res = requests.get(api_url, params=params, headers=HTTP_HEADERS, timeout=15, verify=False)
+        if res.status_code == 200:
+            try:
+                data = res.json()
+                for item in data:
+                    title = item.get("KindName", "") or item.get("Title", "")
+                    role = "部長" if "部長" in title else ("次長" if "次長" in title else None)
+                    if role:
+                        time_str = item.get("SchTime", "-")
+                        content_str = item.get("SchTitle", "")
+                        place_str = item.get("SchPlace", "")
+                        if place_str:
+                            content_str += f"（地點：{place_str}）"
+                        categories_status[role].append({
+                            "時間": time_str,
+                            "行程內容": content_str
+                        })
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[Warning] 經濟部 API 呼叫異常: {e}")
 
     final_rows = []
     for cat in ["部長", "次長"]:
