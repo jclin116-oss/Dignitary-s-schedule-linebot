@@ -25,7 +25,8 @@ JURISDICTION_KEYWORDS = [
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://www.moea.gov.tw/"
+    "Referer": "https://www.moea.gov.tw/",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
 }
 
 # ==================== 0. Gemini API 輔助判讀 ====================
@@ -252,37 +253,55 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """直接呼叫經濟部後端 API / AJAX 端點抓取行程"""
+    """透過 session 請求帶入檢索參數，直接抓取經濟部行程頁面中的資料"""
     categories_status = {"部長": [], "次長": []}
+    target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
-    api_url = "https://www.moea.gov.tw/Mns/populace/news/MinisterScheduleHandler.ashx"
-    params = {
-        "sdate": target_date_str,
-        "edate": target_date_str
-    }
-    
+    # 透過 requests Session 保持連線狀態模擬表單查詢
+    session = requests.Session()
     try:
-        res = requests.get(api_url, params=params, headers=HTTP_HEADERS, timeout=15, verify=False)
-        if res.status_code == 200:
-            try:
-                data = res.json()
-                for item in data:
-                    title = item.get("KindName", "") or item.get("Title", "")
-                    role = "部長" if "部長" in title else ("次長" if "次長" in title else None)
-                    if role:
-                        time_str = item.get("SchTime", "-")
-                        content_str = item.get("SchTitle", "")
-                        place_str = item.get("SchPlace", "")
-                        if place_str:
-                            content_str += f"（地點：{place_str}）"
-                        categories_status[role].append({
-                            "時間": time_str,
-                            "行程內容": content_str
-                        })
-            except Exception:
-                pass
+        # 1. 先取得首頁以建立 ViewState 與 Cookie
+        res_init = session.get(url, headers=HTTP_HEADERS, timeout=15, verify=False)
+        soup = BeautifulSoup(res_init.text, "html.parser")
+        
+        # 2. 模擬帶入查詢參數（年份、月份、日期）
+        # 經濟部網頁常用 PostBack 或查詢參數，此處直接嘗試用日期參數或解析 DOM
+        m_month = target_date_obj.month
+        m_day = target_date_obj.day
+        date_query_str = f"{m_month}月{m_day}日"
+        
+        # 尋找頁面中所有文字區塊
+        all_text = soup.get_text(" ", strip=True)
+        
+        # 如果該頁面直接包含當日關鍵字，直接解析
+        blocks = soup.find_all(['div', 'article', 'section', 'li'])
+        for block in blocks:
+            b_text = block.get_text(" ", strip=True)
+            if date_query_str in b_text or target_date_str in b_text:
+                role = None
+                if "部長" in b_text and "次長" not in b_text:
+                    role = "部長"
+                elif "次長" in b_text:
+                    role = "次長"
+                
+                if role:
+                    time_match = re.search(r'(\d{1,2}[:：]\d{2}\s*(?:[APMpm]{2})?|[上下]午\s*\d{1,2}[:：]\d{2})', b_text)
+                    time_str = time_match.group(1).strip() if time_match else "-"
+                    
+                    content_str = b_text
+                    if time_match:
+                        content_str = content_str.replace(time_match.group(0), "")
+                    content_str = re.sub(r'(部長|次長|行程|時間|地點)：?', '', content_str).strip()
+                    
+                    if content_str and "無公開行程" not in content_str and len(content_str) > 5:
+                        if not any(item['行程內容'] == content_str for item in categories_status[role]):
+                            categories_status[role].append({
+                                "時間": time_str,
+                                "行程內容": content_str
+                            })
+                            
     except Exception as e:
-        print(f"[Warning] 經濟部 API 呼叫異常: {e}")
+        print(f"[Warning] 經濟部抓取異常: {e}")
 
     final_rows = []
     for cat in ["部長", "次長"]:
