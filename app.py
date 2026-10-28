@@ -205,7 +205,7 @@ def get_ey_data(url, title, target_date_str):
     
     if soup:
         outer_blocks = soup.find_all(class_="timeline_block")
-        current_date_str = None  # 用來記錄上一筆的日期，處理同一天多個行程時日期標籤被省略的情況
+        current_date_str = None  
         
         for block in outer_blocks:
             date_tag = block.find(class_=["timeline-date", "newsDate"])
@@ -215,11 +215,9 @@ def get_ey_data(url, title, target_date_str):
                 if parsed_date:
                     current_date_str = parsed_date
             
-            # 如果既沒有新的 date_tag，前面也沒有記錄過日期，則跳過
             if not current_date_str:
                 continue
                 
-            # 比對是否為目標日期
             if current_date_str != target_date_str:
                 continue
                 
@@ -259,69 +257,64 @@ def get_moea_schedule(url, target_date_str):
     soup = fetch_html(url)
 
     if soup:
-        date_tags = soup.find_all(id=re.compile(r'lblDate_S_'))
-        for d_tag in date_tags:
-            date_text = d_tag.get_text(strip=True)
-            day_container = d_tag.find_parent(class_=re.compile(r'sch_day|divchs|divchs_items')) or d_tag.parent.parent
-            year_tag = day_container.find(class_="sch_year")
-            year_text = year_tag.get_text(strip=True) if year_tag else str(target_date_obj.year)
+        schedule_cards = soup.find_all(class_=re.compile(r'card|news_box|schedule_item|sch_block|item', re.I))
+        
+        if not schedule_cards:
+            schedule_cards = soup.find_all(['div', 'section', 'li'], class_=re.compile(r'date|content|list', re.I))
+
+        for block in schedule_cards:
+            full_text = block.get_text(" ", strip=True)
             
-            month_match = re.search(r'(\d+)\s*月', date_text)
-            day_match = re.search(r'(\d+)\s*日', date_text)
+            m_month = target_date_obj.month
+            m_day = target_date_obj.day
             
-            if month_match and day_match:
-                m, d, y = int(month_match.group(1)), int(day_match.group(1)), int(year_text)
-                if f"{y}-{m:02d}-{d:02d}" != target_date_str:
-                    continue
-            else:
+            date_patterns = [
+                f"{m_month}月{m_day}日",
+                f"{m_month}/{m_day}",
+                f"{m_month}月 {m_day}日",
+                target_date_str
+            ]
+            
+            has_date = any(p in full_text for p in date_patterns)
+            
+            title = None
+            if "部長" in full_text and "次長" not in full_text:
+                title = "部長"
+            elif "次長" in full_text:
+                title = "次長"
+            
+            if not title:
                 continue
+                
+            time_match = re.search(r'([上下]午\s*\d+[:：]\d+|\d{2}[:：]\d+)', full_text)
+            time_str = time_match.group(1).replace(" ", "") if time_match else "-"
             
-            sch_blocks = day_container.find_all(class_="divSch")
-            if not sch_blocks:
-                sibling = day_container.find_next_sibling()
-                while sibling and "divSch" in sibling.get("class", []):
-                    sch_blocks.append(sibling)
-                    sibling = sibling.find_next_sibling()
+            content_str = full_text
+            content_str = re.sub(r'([上下]午\s*\d+[:：]\d+|\d{2}[:：]\d+)', '', content_str)
+            content_str = re.sub(r'(部長|次長|行程|時間|地點)：?', '', content_str).strip()
             
-            for block in sch_blocks:
-                kind_tag = block.find(class_="minister-kind")
-                title = kind_tag.get_text(strip=True) if kind_tag else None
-                if not title or title not in categories_status:
-                    continue
-                
-                title_tag = block.find(class_="sch-title")
-                if not title_tag:
-                    continue
-                
-                title_text = title_tag.get_text(strip=True)
-                if "本日無公開行程" in title_text:
-                    continue
-                
-                time_match = re.match(r'^(\d+[:：]\d+\s*[APMpm]+|[上下]午\s*\d+[:：]\d+)', title_text)
-                if time_match:
-                    time_str = time_match.group(1)
-                    content_str = title_text.replace(time_str, "", 1).strip()
-                else:
-                    time_str = "-"
-                    content_str = title_text
-                
-                place_tag = block.find(class_="sch-place")
-                place_str = place_tag.get_text(strip=True).replace("地點：", "").strip() if place_tag else "-"
-                if place_str and place_str != "-":
-                    content_str = f"{content_str}（地點：{place_str}）"
-                
-                categories_status[title].append({"時間": time_str, "行程內容": content_str})
+            if not content_str or "本日無公開行程" in content_str:
+                continue
+
+            categories_status[title].append({
+                "時間": time_str,
+                "行程內容": content_str
+            })
 
     final_rows = []
     for cat in ["部長", "次長"]:
         if categories_status[cat]:
+            seen = set()
             for item in categories_status[cat]:
-                final_rows.append({
-                    "機關": "經濟部",
-                    "類別/官階": cat,
-                    "行程內容": item["行程內容"],
-                    "時間": item["時間"]
-                })
+                identifier = (item["時間"], item["行程內容"])
+                if identifier not in seen:
+                    seen.add(identifier)
+                    final_rows.append({
+                        "機關": "經濟部",
+                        "類別/官階": cat,
+                        "行程內容": item["行程內容"],
+                        "時間": item["時間"]
+                    })
         else:
             final_rows.append({
                 "機關": "經濟部",
@@ -329,6 +322,7 @@ def get_moea_schedule(url, target_date_str):
                 "行程內容": "無公開行程",
                 "時間": "-"
             })
+            
     return final_rows
 
 def run_all_scrapers(target_date_obj):
@@ -367,7 +361,6 @@ def push_line_notification(date_str, all_items):
         "Authorization": f"Bearer {channel_access_token}"
     }
 
-    # 判斷是否有任何一筆行程命中轄區
     has_jurisdiction = any(item.get("is_jurisdiction", False) for item in all_items)
     status_header = "✅ 有本處轄區" if has_jurisdiction else "❌ 無本處轄區"
 
@@ -382,7 +375,6 @@ def push_line_notification(date_str, all_items):
         is_j = item.get("is_jurisdiction", False)
         kw_info = item.get("關鍵字", "")
 
-        # 若命中轄區，在該行末尾標註關鍵字或判讀結果
         tag = f" 📌 [轄區行程: {kw_info}]" if is_j else ""
 
         if content_info == "無公開行程" or time_info == "-":
@@ -428,7 +420,6 @@ def run_cli_cron():
     for row in data:
         content = str(row.get("行程內容", ""))
         
-        # 1. 第一階段：關鍵字比對
         found_keywords = [kw for kw in JURISDICTION_KEYWORDS if kw in content]
         
         keyword_str = ""
@@ -438,7 +429,6 @@ def run_cli_cron():
             is_jurisdiction = True
             keyword_str = "、".join(found_keywords)
         else:
-            # 2. 第二階段：關鍵字未命中，交由 Gemini API 判讀
             is_ai_matched, ai_reason = check_by_gemini_api(content)
             if is_ai_matched:
                 is_jurisdiction = True
@@ -457,7 +447,6 @@ def run_cli_cron():
         if is_jurisdiction:
             matched_items.append(item_obj)
 
-    # 寫入 JSON 檔案備份
     output_data = {
         "date": date_str,
         "has_matched": len(matched_items) > 0,
@@ -469,8 +458,8 @@ def run_cli_cron():
 
     print(f"已成功產出 matched_results.json（共 {len(all_items)} 筆行程，轄區行程：{len(matched_items)} 筆）")
 
-    # 將所有行程推播給 LINE 群組
     push_line_notification(date_str, all_items)
 
 if __name__ == "__main__":
     run_cli_cron()
+
