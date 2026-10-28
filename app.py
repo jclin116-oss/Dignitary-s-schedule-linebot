@@ -252,7 +252,7 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """透過 ZenRows API 並啟用 antibot 參數繞過嚴格的 Cloudflare 防護"""
+    """透過 ZenRows API 指定台灣本地代理並啟用 antibot 繞過防護"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
@@ -273,9 +273,10 @@ def get_moea_schedule(url, target_date_str):
         "apikey": zenrows_api_key,
         "url": url,
         "js_render": "true",
-        "antibot": "true",       # 啟用專門對付 Cloudflare 的進階繞過機制
+        "antibot": "true",
         "premium_proxy": "true",
-        "wait": "5000"           # 增加等待時間讓防護挑戰完成
+        "proxy_country": "tw",   # 強制指定台灣本地代理 IP，避免海外 IP 被直接拒絕
+        "wait": "5000"
     }
 
     try:
