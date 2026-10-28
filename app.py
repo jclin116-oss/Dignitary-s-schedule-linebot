@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import urllib3
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 # 關閉 SSL 憑證警告資訊
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -25,8 +26,7 @@ JURISDICTION_KEYWORDS = [
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://www.moea.gov.tw/",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+    "Referer": "https://www.moea.gov.tw/"
 }
 
 # ==================== 0. Gemini API 輔助判讀 ====================
@@ -253,55 +253,66 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """透過 session 請求帶入檢索參數，直接抓取經濟部行程頁面中的資料"""
+    """使用 Playwright 模擬瀏覽器執行 JS 渲染後抓取經濟部行程"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
-    # 透過 requests Session 保持連線狀態模擬表單查詢
-    session = requests.Session()
+    m_month = target_date_obj.month
+    m_day = target_date_obj.day
+    date_keyword = f"{m_month}月{m_day}日"
+
     try:
-        # 1. 先取得首頁以建立 ViewState 與 Cookie
-        res_init = session.get(url, headers=HTTP_HEADERS, timeout=15, verify=False)
-        soup = BeautifulSoup(res_init.text, "html.parser")
-        
-        # 2. 模擬帶入查詢參數（年份、月份、日期）
-        # 經濟部網頁常用 PostBack 或查詢參數，此處直接嘗試用日期參數或解析 DOM
-        m_month = target_date_obj.month
-        m_day = target_date_obj.day
-        date_query_str = f"{m_month}月{m_day}日"
-        
-        # 尋找頁面中所有文字區塊
-        all_text = soup.get_text(" ", strip=True)
-        
-        # 如果該頁面直接包含當日關鍵字，直接解析
-        blocks = soup.find_all(['div', 'article', 'section', 'li'])
-        for block in blocks:
-            b_text = block.get_text(" ", strip=True)
-            if date_query_str in b_text or target_date_str in b_text:
-                role = None
-                if "部長" in b_text and "次長" not in b_text:
-                    role = "部長"
-                elif "次長" in b_text:
-                    role = "次長"
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            page.wait_for_timeout(3000)  # 等待 JS 載入
+            
+            html_content = page.content()
+            browser.close()
+
+            soup = BeautifulSoup(html_content, "html.parser")
+            raw_text = soup.get_text("\n", strip=True)
+            lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+
+            in_target_date = False
+            current_role = None
+
+            for i, line in enumerate(lines):
+                if date_keyword in line:
+                    in_target_date = True
+                    continue
                 
-                if role:
-                    time_match = re.search(r'(\d{1,2}[:：]\d{2}\s*(?:[APMpm]{2})?|[上下]午\s*\d{1,2}[:：]\d{2})', b_text)
-                    time_str = time_match.group(1).strip() if time_match else "-"
-                    
-                    content_str = b_text
-                    if time_match:
-                        content_str = content_str.replace(time_match.group(0), "")
-                    content_str = re.sub(r'(部長|次長|行程|時間|地點)：?', '', content_str).strip()
-                    
-                    if content_str and "無公開行程" not in content_str and len(content_str) > 5:
-                        if not any(item['行程內容'] == content_str for item in categories_status[role]):
-                            categories_status[role].append({
+                if in_target_date:
+                    if re.search(r'\d{1,2}月\d{1,2}日', line) and date_keyword not in line:
+                        break
+
+                    if line in ["部長", "次長"]:
+                        current_role = line
+                        continue
+
+                    if current_role and ("AM" in line or "PM" in line or re.search(r'\d{1,2}[:：]\d{2}', line)):
+                        time_str = line
+                        content_parts = []
+                        j = i + 1
+                        while j < len(lines):
+                            next_line = lines[j]
+                            if next_line in ["部長", "次長"] or re.search(r'\d{1,2}月\d{1,2}日', next_line) or "AM" in next_line or "PM" in next_line:
+                                break
+                            content_parts.append(next_line)
+                            j += 1
+                        
+                        full_content = " ".join(content_parts).strip()
+                        if full_content and "無公開行程" not in full_content:
+                            categories_status[current_role].append({
                                 "時間": time_str,
-                                "行程內容": content_str
+                                "行程內容": full_content
                             })
-                            
+
     except Exception as e:
-        print(f"[Warning] 經濟部抓取異常: {e}")
+        print(f"[Error] Playwright 執行失敗: {e}")
 
     final_rows = []
     for cat in ["部長", "次長"]:
