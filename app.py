@@ -252,69 +252,73 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
+    """專門適配經濟部新版 HTML 結構的行程抓取邏輯"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
+    
     soup = fetch_html(url)
 
     if soup:
-        schedule_cards = soup.find_all(class_=re.compile(r'card|news_box|schedule_item|sch_block|item', re.I))
-        
-        if not schedule_cards:
-            schedule_cards = soup.find_all(['div', 'section', 'li'], class_=re.compile(r'date|content|list', re.I))
+        # 抓取頁面上所有的容器元素
+        elements = soup.find_all(['div', 'li', 'section'])
+        current_block_date = None
 
-        for block in schedule_cards:
-            full_text = block.get_text(" ", strip=True)
+        for el in elements:
+            text = el.get_text(" ", strip=True)
             
-            m_month = target_date_obj.month
-            m_day = target_date_obj.day
-            
-            date_patterns = [
-                f"{m_month}月{m_day}日",
-                f"{m_month}/{m_day}",
-                f"{m_month}月 {m_day}日",
-                target_date_str
-            ]
-            
-            has_date = any(p in full_text for p in date_patterns)
-            
-            title = None
-            if "部長" in full_text and "次長" not in full_text:
-                title = "部長"
-            elif "次長" in full_text:
-                title = "次長"
-            
-            if not title:
-                continue
+            # 1. 檢查是否包含日期標籤（如 "10月28日 2026" 或 "10月28日"）
+            date_match = re.search(r'(\d{1,2})\s*月\s*(\d{1,2})\s*日', text)
+            if date_match:
+                m, d = int(date_match.group(1)), int(date_match.group(2))
+                # 檢查年份（若有）
+                year_match = re.search(r'20\d{2}', text)
+                y = int(year_match.group(0)) if year_match else target_date_obj.year
                 
-            time_match = re.search(r'([上下]午\s*\d+[:：]\d+|\d{2}[:：]\d+)', full_text)
-            time_str = time_match.group(1).replace(" ", "") if time_match else "-"
-            
-            content_str = full_text
-            content_str = re.sub(r'([上下]午\s*\d+[:：]\d+|\d{2}[:：]\d+)', '', content_str)
-            content_str = re.sub(r'(部長|次長|行程|時間|地點)：?', '', content_str).strip()
-            
-            if not content_str or "本日無公開行程" in content_str:
-                continue
+                if f"{y}-{m:02d}-{d:02d}" == target_date_str:
+                    current_block_date = target_date_str
+                else:
+                    # 如果遇到其他日期，標記非目標日
+                    if len(text) < 30: # 確保這是日期標題而非內文提到的日期
+                        current_block_date = None
 
-            categories_status[title].append({
-                "時間": time_str,
-                "行程內容": content_str
-            })
+            # 2. 如果目前處於目標日期的區塊內，開始抓取行程
+            if current_block_date == target_date_str:
+                role = None
+                if "部長" in text and "次長" not in text:
+                    role = "部長"
+                elif "次長" in text:
+                    role = "次長"
+
+                if role:
+                    # 匹配時間格式 (例如 "9:00 AM" 或 "09:00" 或 "上午9:00")
+                    time_match = re.search(r'(\d{1,2}[:：]\d{2}\s*(?:[APMpm]{2})?|[上下]午\s*\d{1,2}[:：]\d{2})', text)
+                    time_str = time_match.group(1).strip() if time_match else "-"
+
+                    # 清理內容文字
+                    content_str = text
+                    if time_match:
+                        content_str = content_str.replace(time_match.group(0), "")
+                    content_str = re.sub(r'^(部長|次長)', '', content_str).strip()
+
+                    # 避免重複寫入與空內容
+                    if content_str and "本日無公開行程" not in content_str:
+                        # 檢查是否已存在相同的行程
+                        if not any(item['行程內容'] == content_str for item in categories_status[role]):
+                            categories_status[role].append({
+                                "時間": time_str,
+                                "行程內容": content_str
+                            })
 
     final_rows = []
     for cat in ["部長", "次長"]:
         if categories_status[cat]:
-            seen = set()
             for item in categories_status[cat]:
-                identifier = (item["時間"], item["行程內容"])
-                if identifier not in seen:
-                    seen.add(identifier)
-                    final_rows.append({
-                        "機關": "經濟部",
-                        "類別/官階": cat,
-                        "行程內容": item["行程內容"],
-                        "時間": item["時間"]
-                    })
+                final_rows.append({
+                    "機關": "經濟部",
+                    "類別/官階": cat,
+                    "行程內容": item["行程內容"],
+                    "時間": item["時間"]
+                })
         else:
             final_rows.append({
                 "機關": "經濟部",
@@ -462,4 +466,3 @@ def run_cli_cron():
 
 if __name__ == "__main__":
     run_cli_cron()
-
