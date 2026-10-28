@@ -253,13 +253,13 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """使用 Playwright 模擬瀏覽器執行 JS 渲染後抓取經濟部行程"""
+    """使用 Playwright 模擬瀏覽器，並精準比對今日日期區塊抓取經濟部行程"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
     m_month = target_date_obj.month
     m_day = target_date_obj.day
-    date_keyword = f"{m_month}月{m_day}日"
+    today_date_pattern = f"{m_month}月{m_day}日"
 
     try:
         with sync_playwright() as p:
@@ -277,18 +277,21 @@ def get_moea_schedule(url, target_date_str):
             raw_text = soup.get_text("\n", strip=True)
             lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
-            in_target_date = False
+            in_today_block = False
             current_role = None
 
             for i, line in enumerate(lines):
-                if date_keyword in line:
-                    in_target_date = True
+                # 判斷是否進入「今天」的日期區塊
+                if today_date_pattern in line:
+                    in_today_block = True
                     continue
                 
-                if in_target_date:
-                    if re.search(r'\d{1,2}月\d{1,2}日', line) and date_keyword not in line:
-                        break
+                # 若已進入今天區塊，但遇到「非今天」的日期標籤，表示今天區塊已結束，立即中斷
+                if in_today_block and re.search(r'\d{1,2}月\d{1,2}日', line) and today_date_pattern not in line:
+                    break
 
+                # 僅在今天區塊內提取行程
+                if in_today_block:
                     if line in ["部長", "次長"]:
                         current_role = line
                         continue
@@ -299,17 +302,18 @@ def get_moea_schedule(url, target_date_str):
                         j = i + 1
                         while j < len(lines):
                             next_line = lines[j]
-                            if next_line in ["部長", "次長"] or re.search(r'\d{1,2}月\d{1,2}日', next_line) or "AM" in next_line or "PM" in next_line:
+                            if next_line in ["部長", "次長"] or re.search(r'\d{1,2}月\d{1,2}日', next_line) or "AM" in next_line or "PM" in next_line or "※說明" in next_line:
                                 break
                             content_parts.append(next_line)
                             j += 1
                         
                         full_content = " ".join(content_parts).strip()
                         if full_content and "無公開行程" not in full_content:
-                            categories_status[current_role].append({
-                                "時間": time_str,
-                                "行程內容": full_content
-                            })
+                            if not any(item["行程內容"] == full_content for item in categories_status[current_role]):
+                                categories_status[current_role].append({
+                                    "時間": time_str,
+                                    "行程內容": full_content
+                                })
 
     except Exception as e:
         print(f"[Error] Playwright 執行失敗: {e}")
