@@ -19,6 +19,7 @@ jobs:
       - name: 安裝必要套件
         run: |
           pip install -r requirements.txt
+          playwright install --with-deps chromium
 
       - name: 執行爬蟲並產生比對結果
         env:
