@@ -252,7 +252,7 @@ def get_ey_data(url, title, target_date_str):
     return scraped_data
 
 def get_moea_schedule(url, target_date_str):
-    """透過 ZenRows API 指定台灣本地代理並啟用 antibot 繞過防護"""
+    """透過 ZenRows API 抓取經濟部行程，並嚴格以帶有 AM/PM 的行作為行程時間起點"""
     categories_status = {"部長": [], "次長": []}
     target_date_obj = datetime.strptime(target_date_str, "%Y-%m-%d")
     
@@ -275,7 +275,7 @@ def get_moea_schedule(url, target_date_str):
         "js_render": "true",
         "antibot": "true",
         "premium_proxy": "true",
-        "proxy_country": "tw",   # 強制指定台灣本地代理 IP，避免海外 IP 被直接拒絕
+        "proxy_country": "tw",
         "wait": "5000"
     }
 
@@ -284,7 +284,6 @@ def get_moea_schedule(url, target_date_str):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             raw_text = soup.get_text("\n", strip=True)
-            print(f"[Debug] ZenRows 取得經濟部網頁文字總長度: {len(raw_text)}")
 
             lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
@@ -304,13 +303,19 @@ def get_moea_schedule(url, target_date_str):
                         current_role = line
                         continue
 
-                    if current_role and ("AM" in line or "PM" in line or re.search(r'\d{1,2}[:：]\d{2}', line)):
+                    # 嚴格條件：主行程時間必定包含 AM 或 PM（排除內文說明中的 24 小時制時間）
+                    is_time_line = bool(re.search(r'\d{1,2}[:：]\d{2}\s*(?:AM|PM)', line, re.IGNORECASE))
+
+                    if current_role and is_time_line:
                         time_str = line
                         content_parts = []
                         j = i + 1
                         while j < len(lines):
                             next_line = lines[j]
-                            if next_line in ["部長", "次長"] or re.search(r'\d{1,2}月\d{1,2}日', next_line) or "AM" in next_line or "PM" in next_line or "※說明" in next_line:
+                            # 遇到下一個角色、日期或下一個帶有 AM/PM 的時間行時停止收集內文
+                            next_is_time = bool(re.search(r'\d{1,2}[:：]\d{2}\s*(?:AM|PM)', next_line, re.IGNORECASE))
+                            
+                            if next_line in ["部長", "次長"] or re.search(r'\d{1,2}月\d{1,2}日', next_line) or next_is_time:
                                 break
                             content_parts.append(next_line)
                             j += 1
